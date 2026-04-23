@@ -43,19 +43,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'START_RECORDING') {
-    const { tabId: tid, streamId } = msg;
+    const { tabId: tid } = msg;
     (async () => {
       if (!meetingSessions.has(tid)) {
         const tab = await new Promise((r) => chrome.tabs.get(tid, r));
         startSession(tid, tab?.url || '');
       }
       const session = meetingSessions.get(tid);
-      session.startTime = Date.now(); // reset to actual recording start
-      await ensureOffscreenDocument();
-      chrome.runtime.sendMessage({ type: 'START_CAPTURE', tabId: tid, streamId });
-      session.capturing = true;
-      console.log(`[MeetScribe] Recording started [tab ${tid}]`);
-      sendResponse({ ok: true });
+      session.startTime = Date.now();
+      chrome.tabs.sendMessage(tid, { type: 'START_MIC_CAPTURE' }, (res) => {
+        if (chrome.runtime.lastError || res?.error) {
+          const err = res?.error || chrome.runtime.lastError?.message;
+          console.error('[MeetScribe] START_MIC_CAPTURE failed:', err);
+          sendResponse({ error: err });
+          return;
+        }
+        session.capturing = true;
+        console.log(`[MeetScribe] Mic recording started [tab ${tid}]`);
+        sendResponse({ ok: true });
+      });
     })();
     return true; // async
   }
@@ -67,7 +73,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'AUDIO_COMPLETE') {
-    const { tabId: audioTabId, audioBase64, mimeType } = msg;
+    const { audioBase64, mimeType } = msg;
+    const audioTabId = msg.tabId ?? sender.tab?.id;
     const sizeKB = Math.round(audioBase64.length * 0.75 / 1024);
     console.log(`[MeetScribe] AUDIO_COMPLETE [tab ${audioTabId}]: ~${sizeKB} KB, ${mimeType}`);
 
@@ -123,27 +130,11 @@ function serializeSession(session) {
   return { tabId: session.tabId, url: session.url, startTime: session.startTime, capturing: session.capturing };
 }
 
-// ── Audio capture (offscreen document) ────────────────────────────────────────
-
-async function ensureOffscreenDocument() {
-  const url = chrome.runtime.getURL('offscreen.html');
-  try {
-    if (chrome.offscreen?.hasDocument) {
-      if (await chrome.offscreen.hasDocument()) return;
-    }
-    await chrome.offscreen.createDocument({
-      url,
-      reasons: ['USER_MEDIA'],
-      justification: 'Record Meet tab audio for batch transcription',
-    });
-  } catch (e) {
-    // "Only a single offscreen document may be created" — already open, fine
-  }
-}
+// ── Audio capture (content script) ────────────────────────────────────────────
 
 function stopCapture(session) {
   if (!session.capturing) return;
-  chrome.runtime.sendMessage({ type: 'STOP_CAPTURE', tabId: session.tabId });
+  chrome.tabs.sendMessage(session.tabId, { type: 'STOP_MIC_CAPTURE' });
   session.capturing = false;
 }
 

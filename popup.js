@@ -73,25 +73,15 @@ function startRecording() {
   btn.disabled = true;
   btn.innerHTML = '<div class="btn-dot"></div> Starting…';
 
-  // tabCapture.getMediaStreamId must be called from a user-gesture context (the popup).
-  // The stream ID is then forwarded to the background which passes it to the offscreen doc.
-  chrome.tabCapture.getMediaStreamId({ targetTabId: currentTab.id }, (streamId) => {
-    if (chrome.runtime.lastError || !streamId) {
-      setControlError(chrome.runtime.lastError?.message || 'Could not access tab audio.');
+  chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: currentTab.id }, (res) => {
+    if (res?.error) {
+      setControlError(res.error);
       btn.disabled = false;
       renderControls();
       return;
     }
-    chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: currentTab.id, streamId }, (res) => {
-      if (res?.error) {
-        setControlError(res.error);
-        btn.disabled = false;
-        renderControls();
-        return;
-      }
-      isCapturing = true;
-      renderControls();
-    });
+    isCapturing = true;
+    renderControls();
   });
 }
 
