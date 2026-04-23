@@ -1,7 +1,7 @@
 // Offscreen document: handles getUserMedia from tabCapture streamId,
 // feeds PCM audio to Deepgram WebSocket, relays transcript back to background.
 
-let activeCaptures = new Map(); // tabId -> { stream, audioCtx, ws, processor }
+let activeCaptures = new Map(); // tabId -> { stream, audioCtx, ws, workletNode, source }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_CAPTURE') {
@@ -36,30 +36,29 @@ async function startCapture(tabId, streamId, deepgramKey) {
   const audioCtx = new AudioContext({ sampleRate: 16000 });
   const source = audioCtx.createMediaStreamSource(stream);
 
-  // ScriptProcessor is deprecated but widely available in extension contexts
-  const bufferSize = 4096;
-  const processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  await audioCtx.audioWorklet.addModule(chrome.runtime.getURL('pcm-processor.js'));
+  const workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
 
   const ws = openDeepgramSocket(tabId, deepgramKey, audioCtx.sampleRate);
 
-  processor.onaudioprocess = (e) => {
+  workletNode.port.onmessage = (e) => {
     if (ws.readyState !== WebSocket.OPEN) return;
-    const pcm = e.inputBuffer.getChannelData(0);
-    const int16 = floatTo16BitPCM(pcm);
+    const int16 = floatTo16BitPCM(e.data); // e.data is the transferred Float32Array
     ws.send(int16.buffer);
   };
 
-  source.connect(processor);
-  processor.connect(audioCtx.destination);
+  source.connect(workletNode);
+  workletNode.connect(audioCtx.destination); // keeps the audio graph active
 
-  activeCaptures.set(tabId, { stream, audioCtx, ws, processor, source });
+  activeCaptures.set(tabId, { stream, audioCtx, ws, workletNode, source });
 }
 
 function stopCapture(tabId) {
   const cap = activeCaptures.get(tabId);
   if (!cap) return;
   try {
-    cap.processor.disconnect();
+    cap.workletNode.port.onmessage = null;
+    cap.workletNode.disconnect();
     cap.source.disconnect();
     cap.audioCtx.close();
     cap.stream.getTracks().forEach((t) => t.stop());
