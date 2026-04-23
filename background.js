@@ -1,6 +1,5 @@
 // MeetScribe background service worker
 
-const DEEPGRAM_WS_URL = 'wss://api.deepgram.com/v1/listen';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 
@@ -50,27 +49,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'START_RECORDING') {
-    const { tabId: recordTabId, streamId } = msg;
-    getKeys().then(async (keys) => {
-      if (!keys.deepgramKey) {
-        sendResponse({ ok: false, error: 'No Deepgram API key — add it in Settings.' });
-        return;
-      }
+    const { tabId: recordTabId } = msg; // no streamId needed — SR runs in the content script
+    (async () => {
       if (!meetingSessions.has(recordTabId)) {
         const tab = await new Promise((r) => chrome.tabs.get(recordTabId, r));
         startSession(recordTabId, tab?.url || '');
       }
       const session = meetingSessions.get(recordTabId);
-      await ensureOffscreenDocument();
-      chrome.runtime.sendMessage({
-        type: 'START_CAPTURE',
-        tabId: recordTabId,
-        streamId,
-        deepgramKey: keys.deepgramKey,
+      chrome.tabs.sendMessage(recordTabId, { type: 'START_SPEECH_REC' }, (res) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ ok: false, error: 'Could not reach Meet tab — try reloading the page.' });
+          return;
+        }
+        if (res?.error) {
+          sendResponse({ ok: false, error: res.error });
+          return;
+        }
+        session.capturing = true;
+        sendResponse({ ok: true });
       });
-      session.capturing = true;
-      sendResponse({ ok: true });
-    });
+    })();
     return true; // async
   }
 
@@ -195,44 +193,34 @@ function serializeSession(session) {
   };
 }
 
-// ── Audio capture ──────────────────────────────────────────────────────────────
-
-async function ensureOffscreenDocument() {
-  const url = chrome.runtime.getURL('offscreen.html');
-  try {
-    // hasDocument is available in Chrome 116+; fall back gracefully
-    if (chrome.offscreen?.hasDocument) {
-      const exists = await chrome.offscreen.hasDocument();
-      if (exists) return;
-    }
-    await chrome.offscreen.createDocument({
-      url,
-      reasons: ['USER_MEDIA'],
-      justification: 'Capture Meet tab audio for transcription',
-    });
-  } catch (e) {
-    // "Only a single offscreen document may be created" — already exists, fine
-  }
-}
+// ── Speech recognition control ─────────────────────────────────────────────────
 
 function stopCapture(session) {
   if (!session.capturing) return;
-  chrome.runtime.sendMessage({ type: 'STOP_CAPTURE', tabId: session.tabId });
+  // Tell the content script to stop SpeechRecognition; ignore errors if tab is already gone
+  chrome.tabs.sendMessage(session.tabId, { type: 'STOP_SPEECH_REC' }, () => {
+    void chrome.runtime.lastError;
+  });
   session.capturing = false;
 }
 
-// Receive transcript lines from offscreen doc
-chrome.runtime.onMessage.addListener((msg) => {
+// Receive transcript lines from the content script (sender.tab.id is set automatically)
+chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === 'TRANSCRIPT_LINE') {
-    const session = meetingSessions.get(msg.tabId);
+    const tid = sender.tab?.id ?? msg.tabId;
+    const session = meetingSessions.get(tid);
     if (!session) return;
     const preview = msg.text.length > 80 ? msg.text.slice(0, 80) + '…' : msg.text;
-    console.log(`[MeetScribe] Transcript [tab ${msg.tabId}] ${msg.speaker}: "${preview}"`);
+    console.log(`[MeetScribe] Transcript [tab ${tid}] ${msg.speaker}: "${preview}"`);
     session.transcript.push({
       speaker: msg.speaker || 'Unknown',
       text: msg.text,
       timestamp: msg.timestamp,
     });
+  }
+
+  if (msg.type === 'SPEECH_REC_ERROR') {
+    console.error('[MeetScribe] SpeechRecognition error from content script:', msg.error);
   }
 });
 
@@ -341,7 +329,7 @@ async function postSlack(webhookUrl, digest, meetUrl) {
 async function getKeys() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(
-      ['deepgramKey', 'anthropicKey', 'slackWebhook'],
+      ['anthropicKey', 'slackWebhook'],
       resolve
     );
   });

@@ -73,26 +73,15 @@ function startRecording() {
   btn.disabled = true;
   btn.innerHTML = '<div class="btn-dot"></div> Starting…';
 
-  chrome.tabCapture.getMediaStreamId({ targetTabId: currentTab.id }, (streamId) => {
-    if (chrome.runtime.lastError || !streamId) {
-      setControlError(chrome.runtime.lastError?.message || 'Could not access tab audio.');
+  chrome.runtime.sendMessage({ type: 'START_RECORDING', tabId: currentTab.id }, (res) => {
+    if (res?.error) {
+      setControlError(res.error);
       btn.disabled = false;
       renderControls();
       return;
     }
-    chrome.runtime.sendMessage(
-      { type: 'START_RECORDING', tabId: currentTab.id, streamId },
-      (res) => {
-        if (res?.error) {
-          setControlError(res.error);
-          btn.disabled = false;
-          renderControls();
-          return;
-        }
-        isCapturing = true;
-        renderControls();
-      }
-    );
+    isCapturing = true;
+    renderControls();
   });
 }
 
@@ -151,7 +140,7 @@ function render() {
   const statusBar = $('statusBar');
   if (isCapturing) {
     statusBar.classList.add('visible');
-    statusBar.innerHTML = `<strong>Transcribing</strong> — audio is streaming to Deepgram.`;
+    statusBar.innerHTML = `<strong>Transcribing</strong> — Speech Recognition is active.`;
   } else {
     statusBar.classList.remove('visible');
   }

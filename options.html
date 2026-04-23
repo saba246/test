@@ -215,20 +215,6 @@
       </div>
 
       <div class="field">
-        <label for="deepgramKey">Deepgram API Key</label>
-        <div class="input-wrap">
-          <input type="password" id="deepgramKey" placeholder="dg_xxxxxxxxxxxxxxxxxxxxxxxx">
-          <button class="toggle-vis" data-target="deepgramKey" title="Show/hide">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-          </button>
-        </div>
-        <div class="field-hint">Used for live audio transcription. Get a free key at <a href="https://console.deepgram.com" target="_blank">console.deepgram.com</a></div>
-      </div>
-
-      <div class="field">
         <label for="anthropicKey">Anthropic API Key</label>
         <div class="input-wrap">
           <input type="password" id="anthropicKey" placeholder="sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx">
@@ -274,8 +260,8 @@
       </div>
       <div class="info-box">
         <strong>1. Detection</strong> — MeetScribe watches for any <code>meet.google.com</code> tab.<br>
-        <strong>2. Capture</strong> — When you join a call, it captures the tab audio via Chrome's tabCapture API.<br>
-        <strong>3. Transcription</strong> — Audio streams live to Deepgram with speaker diarization.<br>
+        <strong>2. Recording</strong> — Click <em>Start Recording</em> in the popup. Chrome's built-in Speech Recognition begins transcribing your microphone.<br>
+        <strong>3. Transcription</strong> — Final speech results are collected in real time with timestamps. No external API needed.<br>
         <strong>4. Summarization</strong> — When the meeting ends, Claude summarizes the transcript.<br>
         <strong>5. Delivery</strong> — Summary is saved locally and optionally posted to Slack.
       </div>

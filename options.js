@@ -1,6 +1,6 @@
 // MeetScribe options page
 
-const fields = ['deepgramKey', 'anthropicKey', 'slackWebhook'];
+const fields = ['anthropicKey', 'slackWebhook'];
 
 function $(id) { return document.getElementById(id); }
 
