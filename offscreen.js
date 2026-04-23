@@ -102,6 +102,8 @@ function openDeepgramSocket(tabId, apiKey, sampleRate) {
 
     const words = alt.words || [];
     const speaker = words.length > 0 ? `Speaker ${words[0].speaker ?? 0}` : 'Unknown';
+    const preview = alt.transcript.length > 80 ? alt.transcript.slice(0, 80) + '…' : alt.transcript;
+    console.log(`[MeetScribe] Deepgram final [tab ${tabId}] ${speaker}: "${preview}"`);
 
     chrome.runtime.sendMessage({
       type: 'TRANSCRIPT_LINE',

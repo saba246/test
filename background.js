@@ -113,49 +113,75 @@ async function endSession(tabId, reason) {
   stopCapture(session);
   meetingSessions.delete(tabId);
 
-  if (session.transcript.length === 0) return;
+  console.log(`[MeetScribe] Session ended (${reason}) — ${session.transcript.length} transcript lines`);
+
+  if (session.transcript.length === 0) {
+    console.log('[MeetScribe] No transcript captured, nothing to summarize');
+    return;
+  }
 
   const keys = await getKeys();
+
   if (!keys.anthropicKey) {
-    saveMeeting({
+    console.warn('[MeetScribe] No Anthropic API key configured');
+    await saveMeeting({
       id: `mtg_${Date.now()}`,
       url: session.url,
       startTime: session.startTime,
       endTime: Date.now(),
       transcript: session.transcript,
       summary: null,
-      error: 'No Anthropic API key configured',
+      stepErrors: { summarization: 'No Anthropic API key — add it in Settings.' },
     });
     return;
   }
 
+  let result;
   try {
-    const result = await summarize(session, keys.anthropicKey);
-    const meeting = {
-      id: `mtg_${Date.now()}`,
-      url: session.url,
-      startTime: session.startTime,
-      endTime: Date.now(),
-      transcript: session.transcript,
-      ...result,
-    };
-    await saveMeeting(meeting);
-
-    if (keys.slackWebhook && result.slackDigest) {
-      await postSlack(keys.slackWebhook, result.slackDigest, session.url);
-    }
+    result = await summarize(session, keys.anthropicKey);
+    console.log('[MeetScribe] Summarization OK — keys:', Object.keys(result).join(', '));
   } catch (err) {
-    console.error('MeetScribe summarize error:', err);
-    saveMeeting({
+    console.error('[MeetScribe] Summarization failed:', err);
+    await saveMeeting({
       id: `mtg_${Date.now()}`,
       url: session.url,
       startTime: session.startTime,
       endTime: Date.now(),
       transcript: session.transcript,
       summary: null,
-      error: String(err),
+      stepErrors: { summarization: String(err) },
     });
+    return;
   }
+
+  const stepErrors = {};
+
+  if (!keys.slackWebhook) {
+    console.log('[MeetScribe] No Slack webhook configured — skipping');
+  } else if (!result.slackDigest) {
+    const msg = 'Claude response is missing the slackDigest field';
+    console.warn('[MeetScribe]', msg);
+    stepErrors.slack = msg;
+  } else {
+    console.log('[MeetScribe] Posting to Slack...');
+    const slackErr = await postSlack(keys.slackWebhook, result.slackDigest, session.url);
+    if (slackErr) {
+      console.error('[MeetScribe] Slack delivery failed:', slackErr);
+      stepErrors.slack = slackErr;
+    } else {
+      console.log('[MeetScribe] Slack delivery OK');
+    }
+  }
+
+  await saveMeeting({
+    id: `mtg_${Date.now()}`,
+    url: session.url,
+    startTime: session.startTime,
+    endTime: Date.now(),
+    transcript: session.transcript,
+    ...result,
+    stepErrors,
+  });
 }
 
 function serializeSession(session) {
@@ -200,6 +226,8 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'TRANSCRIPT_LINE') {
     const session = meetingSessions.get(msg.tabId);
     if (!session) return;
+    const preview = msg.text.length > 80 ? msg.text.slice(0, 80) + '…' : msg.text;
+    console.log(`[MeetScribe] Transcript [tab ${msg.tabId}] ${msg.speaker}: "${preview}"`);
     session.transcript.push({
       speaker: msg.speaker || 'Unknown',
       text: msg.text,
@@ -215,6 +243,8 @@ async function summarize(session, apiKey) {
   const transcriptText = session.transcript
     .map((l) => `[${formatTime(l.timestamp - session.startTime)}] ${l.speaker}: ${l.text}`)
     .join('\n');
+
+  console.log(`[MeetScribe] Summarize: ${session.transcript.length} lines, ${transcriptText.length} chars, ~${duration} min`);
 
   const prompt = `You are a meeting assistant. Analyze the following meeting transcript and provide a structured response in JSON format.
 
@@ -235,6 +265,8 @@ Return a JSON object with exactly these keys:
 
 Return ONLY valid JSON, no markdown code fences.`;
 
+  console.log(`[MeetScribe] Claude fetch — model: ${CLAUDE_MODEL}, prompt: ${prompt.length} chars`);
+
   const response = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
@@ -249,38 +281,58 @@ Return ONLY valid JSON, no markdown code fences.`;
     }),
   });
 
+  console.log(`[MeetScribe] Claude HTTP status: ${response.status}`);
+
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${err}`);
+    console.error('[MeetScribe] Claude error body:', err);
+    throw new Error(`Anthropic API ${response.status}: ${err}`);
   }
 
   const data = await response.json();
   const text = data.content[0]?.text || '';
+  console.log(`[MeetScribe] Claude response (first 300 chars): ${text.slice(0, 300)}`);
 
   try {
-    return JSON.parse(text);
+    const result = JSON.parse(text);
+    console.log('[MeetScribe] JSON parse OK — keys:', Object.keys(result).join(', '));
+    return result;
   } catch {
-    // Try to extract JSON from text
     const match = text.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (match) {
+      console.log('[MeetScribe] JSON extracted from surrounding text');
+      return JSON.parse(match[0]);
+    }
     throw new Error('Could not parse Claude response as JSON');
   }
 }
 
 // ── Slack delivery ─────────────────────────────────────────────────────────────
 
+// Returns null on success, or an error string on failure.
 async function postSlack(webhookUrl, digest, meetUrl) {
-  const body = {
+  const payload = {
     text: `*MeetScribe Summary*\n${digest}\n<${meetUrl}|View Meeting>`,
   };
+  // Mask the per-workspace token portion for safe logging
+  const maskedUrl = webhookUrl.replace(/(\/services\/[^/]+\/[^/]+\/).*$/, '$1***');
+  console.log(`[MeetScribe] Slack POST → ${maskedUrl}`);
+  console.log(`[MeetScribe] Slack payload: ${JSON.stringify(payload).slice(0, 300)}`);
   try {
-    await fetch(webhookUrl, {
+    const resp = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     });
+    const body = await resp.text();
+    console.log(`[MeetScribe] Slack response — HTTP ${resp.status}, body: "${body}"`);
+    if (!resp.ok) {
+      return `HTTP ${resp.status}: "${body}"`;
+    }
+    return null; // success
   } catch (err) {
-    console.error('MeetScribe Slack post error:', err);
+    console.error('[MeetScribe] Slack fetch threw:', err);
+    return String(err);
   }
 }
 

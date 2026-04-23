@@ -297,6 +297,44 @@
       color: #fca5a5;
     }
 
+    .pipeline-status {
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pipeline-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      line-height: 1.5;
+    }
+    .pipeline-step.ok {
+      background: #052e16;
+      border: 1px solid #14532d;
+      color: #86efac;
+    }
+    .pipeline-step.skipped {
+      background: #1c1917;
+      border: 1px solid #292524;
+      color: #78716c;
+    }
+    .pipeline-step.error {
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      color: #fca5a5;
+    }
+    .step-icon {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 12px;
+      margin-top: 1px;
+    }
+
     .delete-btn {
       background: none;
       border: none;

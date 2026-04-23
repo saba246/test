@@ -181,6 +181,8 @@ function buildCard(meeting) {
     : null;
 
   const meetCode = meeting.url?.match(/meet\.google\.com\/([a-z-]+)/)?.[1] || 'Meeting';
+  const stepErrors = meeting.stepErrors || {};
+  const hasErrors = meeting.error || Object.keys(stepErrors).length > 0;
 
   const header = document.createElement('div');
   header.className = 'meeting-header';
@@ -192,7 +194,7 @@ function buildCard(meeting) {
         ${durationMin !== null ? `<span class="stat-chip">${durationMin}m</span>` : ''}
         ${meeting.transcript ? `<span class="stat-chip">${meeting.transcript.length} lines</span>` : ''}
         ${meeting.summary ? '<span class="stat-chip">Summarized</span>' : ''}
-        ${meeting.error ? '<span class="stat-chip" style="color:#fca5a5;border-color:#7f1d1d">Error</span>' : ''}
+        ${hasErrors ? '<span class="stat-chip" style="color:#fca5a5;border-color:#7f1d1d">Error</span>' : ''}
       </div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
@@ -227,11 +229,71 @@ function buildCard(meeting) {
   return card;
 }
 
+function buildPipelineStatus(meeting) {
+  const stepErrors = meeting.stepErrors || {};
+  const lines = meeting.transcript || [];
+  const slackConfigured = meeting.slackDigest !== undefined || stepErrors.slack;
+
+  const steps = [
+    {
+      label: 'Transcription',
+      key: 'transcription',
+      ok: lines.length > 0,
+      detail: lines.length ? `${lines.length} lines` : 'no lines captured',
+      alwaysShow: true,
+    },
+    {
+      label: 'Summarization',
+      key: 'summarization',
+      ok: !!meeting.summary?.length,
+      detail: stepErrors.summarization || (meeting.summary ? '' : 'not available'),
+      alwaysShow: true,
+    },
+    {
+      label: 'Slack delivery',
+      key: 'slack',
+      ok: slackConfigured && !stepErrors.slack,
+      detail: stepErrors.slack || (!slackConfigured ? 'webhook not configured' : ''),
+      skipped: !slackConfigured && !stepErrors.slack,
+      alwaysShow: true,
+    },
+  ];
+
+  const el = document.createElement('div');
+  el.className = 'pipeline-status';
+
+  steps.forEach(({ label, key, ok, detail, skipped }) => {
+    const row = document.createElement('div');
+    if (skipped) {
+      row.className = 'pipeline-step skipped';
+      row.innerHTML = `<span class="step-icon">—</span><span>${label}: ${escHtml(detail)}</span>`;
+    } else if (stepErrors[key] || (!ok && detail)) {
+      row.className = 'pipeline-step error';
+      row.innerHTML = `<span class="step-icon">✗</span><span><strong>${label}</strong>${detail ? ': ' + escHtml(detail) : ''}</span>`;
+    } else {
+      row.className = 'pipeline-step ok';
+      row.innerHTML = `<span class="step-icon">✓</span><span>${label}${detail ? ' (' + escHtml(detail) + ')' : ''}</span>`;
+    }
+    el.appendChild(row);
+  });
+
+  return el;
+}
+
 function buildBody(meeting) {
   const wrap = document.createElement('div');
 
+  // Legacy single-error meetings (before stepErrors was added)
   if (meeting.error && !meeting.summary) {
-    wrap.innerHTML = `<div class="tab-content"><div class="error-note">${escHtml(meeting.error)}</div></div>`;
+    const div = document.createElement('div');
+    div.className = 'tab-content';
+    div.appendChild(buildPipelineStatus(meeting));
+    const note = document.createElement('div');
+    note.className = 'error-note';
+    note.style.marginTop = '8px';
+    note.textContent = meeting.error;
+    div.appendChild(note);
+    wrap.appendChild(div);
     return wrap;
   }
 
@@ -266,12 +328,22 @@ function buildBody(meeting) {
   const summaryPanel = document.createElement('div');
   summaryPanel.className = 'tab-panel active';
   summaryPanel.dataset.panel = 'summary';
+  summaryPanel.appendChild(buildPipelineStatus(meeting));
   if (meeting.summary?.length) {
-    summaryPanel.innerHTML = `<div class="section-label">Summary</div>
-      <ul class="bullet-list">${meeting.summary.map((b) => `<li>${escHtml(b)}</li>`).join('')}</ul>`;
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = 'Summary';
+    summaryPanel.appendChild(label);
+    const ul = document.createElement('ul');
+    ul.className = 'bullet-list';
+    ul.innerHTML = meeting.summary.map((b) => `<li>${escHtml(b)}</li>`).join('');
+    summaryPanel.appendChild(ul);
     summaryPanel.appendChild(copyBtn('Copy Summary', meeting.summary.map((b) => `• ${b}`).join('\n')));
   } else {
-    summaryPanel.innerHTML = '<div style="color:#475569;font-size:12px;">No summary available.</div>';
+    const p = document.createElement('div');
+    p.style.cssText = 'color:#475569;font-size:12px;margin-top:4px';
+    p.textContent = 'No summary available.';
+    summaryPanel.appendChild(p);
   }
 
   // Actions panel
