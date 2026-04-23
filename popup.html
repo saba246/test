@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeetScribe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 420px;
+      min-height: 300px;
+      max-height: 600px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: #0f172a;
+      color: #e2e8f0;
+      overflow-y: auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      color: #f1f5f9;
+    }
+
+    .logo svg { flex-shrink: 0; }
+
+    .recording-badge {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 99px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fca5a5;
+    }
+
+    .recording-badge.active { display: flex; }
+
+    .rec-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    .icon-btn:hover { background: #334155; color: #e2e8f0; }
+
+    .status-bar {
+      padding: 8px 16px;
+      background: #1a2744;
+      border-bottom: 1px solid #334155;
+      font-size: 11px;
+      color: #64748b;
+      display: none;
+    }
+    .status-bar.visible { display: block; }
+    .status-bar strong { color: #93c5fd; }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      color: #475569;
+      text-align: center;
+      gap: 12px;
+    }
+    .empty-state svg { opacity: 0.4; }
+    .empty-state p { font-size: 12px; line-height: 1.5; max-width: 240px; }
+
+    .meetings-list { padding: 8px; }
+
+    .meeting-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .meeting-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 12px 14px 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .meeting-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .meeting-date {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+
+    .meeting-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meeting-stats {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .stat-chip {
+      font-size: 10px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 99px;
+      padding: 1px 7px;
+      color: #94a3b8;
+    }
+
+    .card-toggle {
+      flex-shrink: 0;
+      margin-left: 8px;
+      color: #475569;
+      transition: transform 0.2s;
+    }
+    .meeting-card.expanded .card-toggle { transform: rotate(180deg); }
+
+    .meeting-body {
+      display: none;
+      border-top: 1px solid #334155;
+    }
+    .meeting-card.expanded .meeting-body { display: block; }
+
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid #334155;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 7px 0;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn.active {
+      color: #60a5fa;
+      border-bottom-color: #60a5fa;
+    }
+
+    .tab-content { padding: 12px 14px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+
+    .bullet-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 14px;
+    }
+    .bullet-list li {
+      display: flex;
+      gap: 8px;
+      line-height: 1.5;
+      margin-bottom: 4px;
+      color: #cbd5e1;
+      font-size: 12px;
+    }
+    .bullet-list li::before {
+      content: '•';
+      color: #60a5fa;
+      flex-shrink: 0;
+    }
+
+    .action-item {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .action-item .ai-text { color: #e2e8f0; margin-bottom: 3px; }
+    .action-item .ai-meta { color: #64748b; font-size: 11px; }
+
+    .transcript-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #94a3b8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .slack-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+    }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #1e3a5f;
+      border: 1px solid #1d4ed8;
+      border-radius: 6px;
+      color: #93c5fd;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-top: 4px;
+    }
+    .copy-btn:hover { background: #1e40af; }
+    .copy-btn.copied { background: #14532d; border-color: #166534; color: #86efac; }
+
+    .error-note {
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: #fca5a5;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #475569;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s;
+      margin-top: 2px;
+    }
+    .delete-btn:hover { color: #ef4444; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+      MeetScribe
+    </div>
+    <div class="header-actions">
+      <div class="recording-badge" id="recordingBadge">
+        <div class="rec-dot"></div>
+        Recording
+      </div>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <div id="mainContent">
+    <div class="empty-state" id="emptyState">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+      <p>No meetings recorded yet.<br>Join a Google Meet to start transcribing automatically.</p>
+    </div>
+    <div class="meetings-list" id="meetingsList"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

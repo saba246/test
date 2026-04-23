@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "MeetScribe",
+  "version": "1.0.0",
+  "description": "Auto-transcribe and summarize Google Meet meetings with AI",
+  "permissions": [
+    "tabCapture",
+    "tabs",
+    "storage",
+    "scripting",
+    "offscreen",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://api.deepgram.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MeetScribe",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
