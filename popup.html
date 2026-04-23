@@ -311,6 +311,69 @@
     }
     .delete-btn:hover { color: #ef4444; }
 
+    /* ── Meet controls panel ── */
+    .meet-controls {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #0f1f38;
+      border-bottom: 1px solid #1e3a5f;
+      gap: 10px;
+    }
+    .meet-controls.visible { display: flex; }
+
+    .meet-label {
+      font-size: 12px;
+      color: #60a5fa;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .meet-label.error { color: #fca5a5; }
+
+    .record-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border: none;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 7px 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, opacity 0.15s;
+      flex-shrink: 0;
+    }
+    .record-btn:disabled { opacity: 0.55; cursor: default; }
+
+    .record-btn.start {
+      background: #166534;
+      border: 1px solid #16a34a;
+      color: #bbf7d0;
+    }
+    .record-btn.start:not(:disabled):hover { background: #15803d; }
+
+    .record-btn.stop {
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      color: #fca5a5;
+    }
+    .record-btn.stop:not(:disabled):hover { background: #7f1d1d; }
+
+    .btn-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .record-btn.stop .btn-dot {
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
@@ -341,6 +404,14 @@
     </div>
   </header>
 
+  <div class="meet-controls" id="meetControls">
+    <span class="meet-label" id="meetLabel">Google Meet detected</span>
+    <button class="record-btn start" id="recordBtn">
+      <div class="btn-dot"></div>
+      Start Recording
+    </button>
+  </div>
+
   <div class="status-bar" id="statusBar"></div>
 
   <div id="mainContent">
@@ -351,7 +422,7 @@
         <line x1="12" y1="19" x2="12" y2="23"/>
         <line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
-      <p>No meetings recorded yet.<br>Join a Google Meet to start transcribing automatically.</p>
+      <p>No meetings recorded yet.<br>Open a Google Meet tab and click <strong>Start Recording</strong> to begin.</p>
     </div>
     <div class="meetings-list" id="meetingsList"></div>
   </div>

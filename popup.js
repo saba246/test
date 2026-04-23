@@ -4,24 +4,43 @@ const $ = (id) => document.getElementById(id);
 
 let meetings = [];
 let expandedCards = new Set();
-let activeTabIds = new Set();
+
+let currentTab = null;   // active tab when popup opened
+let isMeetTab = false;
+let isCapturing = false;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 async function init() {
+  const tabs = await new Promise((r) =>
+    chrome.tabs.query({ active: true, currentWindow: true }, r)
+  );
+  currentTab = tabs?.[0] || null;
+  isMeetTab = currentTab?.url?.startsWith('https://meet.google.com/') || false;
+
   await loadMeetings();
-  await checkActiveRecording();
+  await checkStatus();
   render();
+  renderControls();
 
   $('settingsBtn').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
 
-  // Refresh every 5s in case a recording is active
+  $('recordBtn').addEventListener('click', () => {
+    if (isCapturing) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+
+  // Refresh every 5s while recording so line-count stays fresh
   setInterval(async () => {
     await loadMeetings();
-    await checkActiveRecording();
+    await checkStatus();
     render();
+    renderControls();
   }, 5000);
 }
 
@@ -34,38 +53,105 @@ async function loadMeetings() {
   });
 }
 
-async function checkActiveRecording() {
+async function checkStatus() {
+  if (!currentTab) return;
   return new Promise((resolve) => {
-    chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
-      if (!tabs || tabs.length === 0) {
-        activeTabIds.clear();
+    chrome.runtime.sendMessage(
+      { type: 'GET_STATUS', tabId: currentTab.id },
+      (res) => {
+        isCapturing = res?.session?.capturing || false;
         resolve();
-        return;
       }
-      let pending = tabs.length;
-      activeTabIds.clear();
-      tabs.forEach((tab) => {
-        chrome.runtime.sendMessage({ type: 'GET_STATUS', tabId: tab.id }, (res) => {
-          if (res?.active) activeTabIds.add(tab.id);
-          pending--;
-          if (pending === 0) resolve();
-        });
-      });
-    });
+    );
   });
+}
+
+// ── Recording controls ─────────────────────────────────────────────────────────
+
+function startRecording() {
+  const btn = $('recordBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="btn-dot"></div> Starting…';
+
+  chrome.tabCapture.getMediaStreamId({ targetTabId: currentTab.id }, (streamId) => {
+    if (chrome.runtime.lastError || !streamId) {
+      setControlError(chrome.runtime.lastError?.message || 'Could not access tab audio.');
+      btn.disabled = false;
+      renderControls();
+      return;
+    }
+    chrome.runtime.sendMessage(
+      { type: 'START_RECORDING', tabId: currentTab.id, streamId },
+      (res) => {
+        if (res?.error) {
+          setControlError(res.error);
+          btn.disabled = false;
+          renderControls();
+          return;
+        }
+        isCapturing = true;
+        renderControls();
+      }
+    );
+  });
+}
+
+function stopRecording() {
+  chrome.runtime.sendMessage({ type: 'STOP_RECORDING', tabId: currentTab.id }, () => {
+    isCapturing = false;
+    renderControls();
+  });
+}
+
+let controlError = null;
+function setControlError(msg) {
+  controlError = msg;
+  setTimeout(() => { controlError = null; renderControls(); }, 4000);
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────────
 
+function renderControls() {
+  const panel = $('meetControls');
+  const label = $('meetLabel');
+  const btn = $('recordBtn');
+
+  if (!isMeetTab) {
+    panel.classList.remove('visible');
+    return;
+  }
+
+  panel.classList.add('visible');
+
+  if (controlError) {
+    label.textContent = controlError;
+    label.className = 'meet-label error';
+  } else if (isCapturing) {
+    label.textContent = 'Recording in progress';
+    label.className = 'meet-label';
+  } else {
+    label.textContent = 'Google Meet detected';
+    label.className = 'meet-label';
+  }
+
+  if (isCapturing) {
+    btn.className = 'record-btn stop';
+    btn.innerHTML = '<div class="btn-dot"></div> Stop Recording';
+  } else {
+    btn.className = 'record-btn start';
+    btn.innerHTML = '<div class="btn-dot"></div> Start Recording';
+  }
+  btn.disabled = false;
+}
+
 function render() {
-  const isRecording = activeTabIds.size > 0;
   const badge = $('recordingBadge');
-  badge.classList.toggle('active', isRecording);
+  badge.classList.toggle('active', isCapturing);
 
   const statusBar = $('statusBar');
-  if (isRecording) {
+  if (isCapturing) {
     statusBar.classList.add('visible');
-    statusBar.innerHTML = `<strong>Recording active</strong> — transcript is being captured in ${activeTabIds.size} meeting${activeTabIds.size > 1 ? 's' : ''}.`;
+    statusBar.innerHTML = `<strong>Transcribing</strong> — audio is streaming to Deepgram.`;
   } else {
     statusBar.classList.remove('visible');
   }

@@ -25,9 +25,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Messages from content script
+// Messages from content script and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const tabId = sender.tab?.id;
+  // Content scripts supply sender.tab.id; popup supplies msg.tabId explicitly.
+  const tabId = msg.tabId ?? sender.tab?.id;
 
   if (msg.type === 'MEET_JOINED' && tabId) {
     if (!meetingSessions.has(tabId)) {
@@ -46,6 +47,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       active: meetingSessions.has(tabId),
       session: tabId ? serializeSession(meetingSessions.get(tabId)) : null,
     });
+  }
+
+  if (msg.type === 'START_RECORDING') {
+    const { tabId: recordTabId, streamId } = msg;
+    getKeys().then(async (keys) => {
+      if (!keys.deepgramKey) {
+        sendResponse({ ok: false, error: 'No Deepgram API key — add it in Settings.' });
+        return;
+      }
+      if (!meetingSessions.has(recordTabId)) {
+        const tab = await new Promise((r) => chrome.tabs.get(recordTabId, r));
+        startSession(recordTabId, tab?.url || '');
+      }
+      const session = meetingSessions.get(recordTabId);
+      await ensureOffscreenDocument();
+      chrome.runtime.sendMessage({
+        type: 'START_CAPTURE',
+        tabId: recordTabId,
+        streamId,
+        deepgramKey: keys.deepgramKey,
+      });
+      session.capturing = true;
+      sendResponse({ ok: true });
+    });
+    return true; // async
+  }
+
+  if (msg.type === 'STOP_RECORDING') {
+    const session = meetingSessions.get(msg.tabId);
+    if (session) stopCapture(session);
+    sendResponse({ ok: true });
   }
 
   if (msg.type === 'GET_MEETINGS') {
@@ -68,16 +100,10 @@ function startSession(tabId, url) {
     tabId,
     url,
     startTime: Date.now(),
-    transcript: [], // { speaker, text, timestamp }
-    rawLines: [],
-    mediaStream: null,
-    audioContext: null,
-    processor: null,
-    ws: null,
+    transcript: [],
     capturing: false,
   };
   meetingSessions.set(tabId, session);
-  beginCapture(tabId);
 }
 
 async function endSession(tabId, reason) {
@@ -144,46 +170,6 @@ function serializeSession(session) {
 }
 
 // ── Audio capture ──────────────────────────────────────────────────────────────
-
-async function beginCapture(tabId) {
-  const session = meetingSessions.get(tabId);
-  if (!session) return;
-
-  const keys = await getKeys();
-  if (!keys.deepgramKey) {
-    console.warn('MeetScribe: no Deepgram key, skipping capture for tab', tabId);
-    return;
-  }
-
-  try {
-    // tabCapture must be called from a user-gesture context or via getMediaStreamId
-    // In MV3 we use chrome.tabCapture.getMediaStreamId then pass to offscreen doc
-    const streamId = await getTabCaptureStreamId(tabId);
-    if (!streamId) return;
-
-    // Open/reuse offscreen document for audio processing
-    await ensureOffscreenDocument();
-
-    chrome.runtime.sendMessage({
-      type: 'START_CAPTURE',
-      tabId,
-      streamId,
-      deepgramKey: keys.deepgramKey,
-    });
-
-    session.capturing = true;
-  } catch (err) {
-    console.error('MeetScribe capture error:', err);
-  }
-}
-
-function getTabCaptureStreamId(tabId) {
-  return new Promise((resolve) => {
-    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
-      resolve(streamId || null);
-    });
-  });
-}
 
 async function ensureOffscreenDocument() {
   const url = chrome.runtime.getURL('offscreen.html');
