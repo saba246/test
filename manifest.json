@@ -14,8 +14,13 @@
   "host_permissions": [
     "https://meet.google.com/*",
     "https://api.deepgram.com/*",
-    "https://api.anthropic.com/*"
+    "wss://api.deepgram.com/*",
+    "https://api.anthropic.com/*",
+    "https://hooks.slack.com/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' wss://api.deepgram.com https://api.deepgram.com https://api.anthropic.com https://hooks.slack.com"
+  },
   "background": {
     "service_worker": "background.js"
   },
