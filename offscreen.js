@@ -1,8 +1,8 @@
-// Offscreen document: captures tab audio via getUserMedia, records it with
-// MediaRecorder, then on STOP_CAPTURE encodes the full blob to base64 and
-// sends AUDIO_COMPLETE to the background service worker.
+// Offscreen document: captures tab audio + microphone, mixes them with
+// AudioContext, records the mix with MediaRecorder, then on STOP_CAPTURE
+// encodes the full blob to base64 and sends AUDIO_COMPLETE to the background.
 
-let activeCaptures = new Map(); // tabId -> { stream, mediaRecorder, chunks }
+let activeCaptures = new Map(); // tabId -> { tabStream, micStream, audioCtx, mediaRecorder, chunks }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START_CAPTURE') {
@@ -18,26 +18,47 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function startCapture(tabId, streamId) {
   if (activeCaptures.has(tabId)) return;
 
-  let stream;
+  // ── Tab audio ────────────────────────────────────────────────────────────────
+  let tabStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    tabStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId },
       },
       video: false,
     });
-    const settings = stream.getAudioTracks()[0]?.getSettings();
-    console.log(`[MeetScribe] getUserMedia OK [tab ${tabId}]`, settings);
+    console.log(`[MeetScribe] Tab stream OK [tab ${tabId}]`, tabStream.getAudioTracks()[0]?.getSettings());
   } catch (err) {
-    console.error(`[MeetScribe] getUserMedia FAILED [tab ${tabId}]:`, err.name, err.message);
+    console.error(`[MeetScribe] Tab getUserMedia FAILED [tab ${tabId}]:`, err.name, err.message);
     return;
   }
 
+  // ── Microphone audio ─────────────────────────────────────────────────────────
+  let micStream = null;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    console.log(`[MeetScribe] Mic stream OK [tab ${tabId}]`, micStream.getAudioTracks()[0]?.getSettings());
+  } catch (err) {
+    // Mic permission denied or unavailable — continue with tab audio only
+    console.warn(`[MeetScribe] Mic getUserMedia failed [tab ${tabId}] (${err.name}): recording tab audio only`);
+  }
+
+  // ── Mix both sources with AudioContext ───────────────────────────────────────
+  const audioCtx = new AudioContext();
+  const destination = audioCtx.createMediaStreamDestination();
+
+  audioCtx.createMediaStreamSource(tabStream).connect(destination);
+  if (micStream) {
+    audioCtx.createMediaStreamSource(micStream).connect(destination);
+  }
+  console.log(`[MeetScribe] AudioContext mixing: tab${micStream ? ' + mic' : ' only'}`);
+
+  // ── Record the mixed stream ──────────────────────────────────────────────────
   const mimeType = pickMimeType();
   console.log(`[MeetScribe] MediaRecorder mimeType: ${mimeType || '(browser default)'}`);
 
   const options = mimeType ? { mimeType } : {};
-  const mediaRecorder = new MediaRecorder(stream, options);
+  const mediaRecorder = new MediaRecorder(destination.stream, options);
   const chunks = [];
 
   mediaRecorder.ondataavailable = (e) => {
@@ -63,17 +84,18 @@ async function startCapture(tabId, streamId) {
   mediaRecorder.start(10_000);
   console.log(`[MeetScribe] MediaRecorder started [tab ${tabId}]`);
 
-  activeCaptures.set(tabId, { stream, mediaRecorder, chunks });
+  activeCaptures.set(tabId, { tabStream, micStream, audioCtx, mediaRecorder, chunks });
 }
 
 function stopCapture(tabId) {
   const cap = activeCaptures.get(tabId);
   if (!cap) return;
   console.log(`[MeetScribe] Stopping MediaRecorder [tab ${tabId}]`);
-  // Request any buffered data before stopping
   cap.mediaRecorder.requestData();
   cap.mediaRecorder.stop();
-  cap.stream.getTracks().forEach((t) => t.stop());
+  cap.tabStream.getTracks().forEach((t) => t.stop());
+  cap.micStream?.getTracks().forEach((t) => t.stop());
+  cap.audioCtx.close();
   activeCaptures.delete(tabId);
 }
 
