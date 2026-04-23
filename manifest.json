@@ -4,11 +4,15 @@
   "version": "1.0.0",
   "description": "Auto-transcribe and summarize Google Meet meetings with AI",
   "permissions": [
+    "tabCapture",
     "tabs",
-    "storage"
+    "storage",
+    "offscreen",
+    "activeTab"
   ],
   "host_permissions": [
     "https://meet.google.com/*",
+    "https://api.deepgram.com/*",
     "https://api.anthropic.com/*",
     "https://hooks.slack.com/*"
   ],

@@ -215,6 +215,20 @@
       </div>
 
       <div class="field">
+        <label for="deepgramKey">Deepgram API Key</label>
+        <div class="input-wrap">
+          <input type="password" id="deepgramKey" placeholder="dg_xxxxxxxxxxxxxxxxxxxxxxxx">
+          <button class="toggle-vis" data-target="deepgramKey" title="Show/hide">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <div class="field-hint">Used for batch transcription via REST API after the meeting. Get a free key at <a href="https://console.deepgram.com" target="_blank">console.deepgram.com</a></div>
+      </div>
+
+      <div class="field">
         <label for="anthropicKey">Anthropic API Key</label>
         <div class="input-wrap">
           <input type="password" id="anthropicKey" placeholder="sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx">
