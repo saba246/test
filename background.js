@@ -234,26 +234,52 @@ async function transcribeAudio(audioBase64, mimeType, apiKey, sessionStartTime) 
     smart_format: 'true',
   });
 
-  const response = await fetch(`${DEEPGRAM_REST_URL}?${params}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${apiKey}`,
-      'Content-Type': mimeType,
-    },
-    body: bytes,
-  });
-
-  console.log(`[MeetScribe] Deepgram HTTP: ${response.status}`);
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error('[MeetScribe] Deepgram error body:', errText.slice(0, 300));
-    throw new Error(`Deepgram ${response.status}: ${errText.slice(0, 200)}`);
+  let response;
+  try {
+    response = await fetch(`${DEEPGRAM_REST_URL}?${params}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${apiKey}`,
+        'Content-Type': mimeType,
+      },
+      body: bytes,
+    });
+  } catch (fetchErr) {
+    console.error('[MeetScribe] Deepgram fetch threw (network error):', fetchErr);
+    throw fetchErr;
   }
 
-  const data = await response.json();
-  const words = data.results?.channels?.[0]?.alternatives?.[0]?.words || [];
+  console.log(`[MeetScribe] Deepgram HTTP status: ${response.status} ${response.statusText}`);
+  console.log('[MeetScribe] Deepgram response headers:', Object.fromEntries(response.headers.entries()));
+
+  const rawBody = await response.text();
+  console.log(`[MeetScribe] Deepgram raw response body (first 2000 chars):\n${rawBody.slice(0, 2000)}`);
+
+  if (!response.ok) {
+    console.error(`[MeetScribe] Deepgram error — status ${response.status}, body: ${rawBody}`);
+    throw new Error(`Deepgram ${response.status}: ${rawBody.slice(0, 200)}`);
+  }
+
+  let data;
+  try {
+    data = JSON.parse(rawBody);
+  } catch (parseErr) {
+    console.error('[MeetScribe] Deepgram response is not valid JSON:', parseErr);
+    throw new Error(`Deepgram response parse error: ${parseErr.message}`);
+  }
+
+  console.log('[MeetScribe] Deepgram metadata:', JSON.stringify(data.metadata ?? {}));
+  console.log('[MeetScribe] Deepgram results.channels length:', data.results?.channels?.length ?? 'undefined');
+
+  const alt = data.results?.channels?.[0]?.alternatives?.[0];
+  console.log('[MeetScribe] Deepgram first alternative keys:', alt ? Object.keys(alt).join(', ') : 'undefined');
+  console.log('[MeetScribe] Deepgram transcript text:', alt?.transcript ?? '(none)');
+
+  const words = alt?.words || [];
   console.log(`[MeetScribe] Deepgram: ${words.length} words returned`);
+  if (words.length > 0) {
+    console.log('[MeetScribe] Deepgram first word sample:', JSON.stringify(words[0]));
+  }
 
   return wordsToUtterances(words, sessionStartTime);
 }
