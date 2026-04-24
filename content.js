@@ -36,25 +36,38 @@
       return;
     }
 
-    console.log('[MeetScribe] Requesting mic access...');
+    console.log('[MeetScribe] Calling getUserMedia({audio: true})...');
     micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    console.log('[MeetScribe] Mic access granted', micStream.getAudioTracks()[0]?.getSettings());
 
-    recordingMimeType = pickMimeType();
-    console.log(`[MeetScribe] MediaRecorder mimeType: ${recordingMimeType || '(browser default)'}`);
+    const tracks = micStream.getAudioTracks();
+    console.log(`[MeetScribe] getUserMedia OK — ${tracks.length} audio track(s)`);
+    tracks.forEach((t, i) =>
+      console.log(`[MeetScribe]   track[${i}]: label="${t.label}", readyState=${t.readyState}, muted=${t.muted}`, t.getSettings())
+    );
+
+    // Prefer opus; fall back only if truly unsupported
+    const preferredMime = 'audio/webm;codecs=opus';
+    recordingMimeType = MediaRecorder.isTypeSupported(preferredMime)
+      ? preferredMime
+      : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+    console.log(`[MeetScribe] MediaRecorder mimeType: "${recordingMimeType || '(browser default)'}"`);
 
     const options = recordingMimeType ? { mimeType: recordingMimeType } : {};
     mediaRecorder = new MediaRecorder(micStream, options);
     audioChunks = [];
+    let chunkIndex = 0;
 
     mediaRecorder.ondataavailable = (e) => {
+      console.log(`[MeetScribe] ondataavailable chunk[${chunkIndex}]: ${e.data.size} bytes`);
       if (e.data.size > 0) audioChunks.push(e.data);
+      chunkIndex++;
     };
 
     mediaRecorder.onstop = async () => {
       const finalMime = mediaRecorder.mimeType || recordingMimeType;
+      const totalBytes = audioChunks.reduce((s, c) => s + c.size, 0);
       const blob = new Blob(audioChunks, { type: finalMime });
-      console.log(`[MeetScribe] Mic recording done: ${(blob.size / 1024).toFixed(1)} KB, ${blob.type}`);
+      console.log(`[MeetScribe] Recording stopped — ${audioChunks.length} chunks, ${totalBytes} bytes raw, blob.size=${blob.size} bytes (${(blob.size / 1024).toFixed(1)} KB), type="${blob.type}"`);
 
       const audioBase64 = await blobToBase64(blob);
       chrome.runtime.sendMessage({ type: 'AUDIO_COMPLETE', audioBase64, mimeType: blob.type });
@@ -64,8 +77,9 @@
       audioChunks = [];
     };
 
-    mediaRecorder.start(10_000);
-    console.log('[MeetScribe] Mic MediaRecorder started');
+    // 1-second timeslice so ondataavailable fires every second for visibility
+    mediaRecorder.start(1000);
+    console.log('[MeetScribe] MediaRecorder started (1s timeslice), state:', mediaRecorder.state);
   }
 
   function stopMicCapture() {
@@ -77,14 +91,6 @@
     mediaRecorder.requestData();
     mediaRecorder.stop();
     micStream?.getTracks().forEach((t) => t.stop());
-  }
-
-  function pickMimeType() {
-    return (
-      ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find(
-        (t) => MediaRecorder.isTypeSupported(t)
-      ) || ''
-    );
   }
 
   function blobToBase64(blob) {
