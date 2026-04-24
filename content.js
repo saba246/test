@@ -70,7 +70,22 @@
       console.log(`[MeetScribe] Recording stopped — ${audioChunks.length} chunks, ${totalBytes} bytes raw, blob.size=${blob.size} bytes (${(blob.size / 1024).toFixed(1)} KB), type="${blob.type}"`);
 
       const audioBase64 = await blobToBase64(blob);
-      chrome.runtime.sendMessage({ type: 'AUDIO_COMPLETE', audioBase64, mimeType: blob.type });
+      console.log(`[MeetScribe] base64 length: ${audioBase64.length} chars — waiting 2s for service worker to wake...`);
+
+      // Service worker may be dormant; give it time to wake before sending.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      console.log('[MeetScribe] Sending AUDIO_COMPLETE to background...');
+      chrome.runtime.sendMessage(
+        { type: 'AUDIO_COMPLETE', audioBase64, mimeType: blob.type },
+        (res) => {
+          if (chrome.runtime.lastError) {
+            console.error('[MeetScribe] AUDIO_COMPLETE send failed:', chrome.runtime.lastError.message);
+          } else {
+            console.log('[MeetScribe] AUDIO_COMPLETE acknowledged by background:', res);
+          }
+        }
+      );
 
       micStream = null;
       mediaRecorder = null;

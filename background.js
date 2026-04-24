@@ -23,6 +23,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // ── Messages ───────────────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  console.log(`[MeetScribe] onMessage: type=${msg.type}, from=${sender.tab ? 'tab ' + sender.tab.id : 'extension'}`);
   const tabId = msg.tabId ?? sender.tab?.id;
 
   if (msg.type === 'MEET_JOINED' && tabId) {
