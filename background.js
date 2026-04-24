@@ -198,7 +198,7 @@ async function processRecording(snap, audioBase64, mimeType) {
     stepErrors.slack = m;
   } else {
     console.log('[MeetScribe] Posting to Slack...');
-    const slackErr = await postSlack(keys.slackWebhook, result.slackDigest, snap.url);
+    const slackErr = await postSlack(keys.slackWebhook, result.slackDigest);
     if (slackErr) {
       console.error('[MeetScribe] Slack failed:', slackErr);
       stepErrors.slack = slackErr;
@@ -347,6 +347,7 @@ Return ONLY valid JSON, no markdown code fences.`;
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
@@ -383,10 +384,13 @@ Return ONLY valid JSON, no markdown code fences.`;
 
 // ── Slack delivery ─────────────────────────────────────────────────────────────
 
-async function postSlack(webhookUrl, digest, meetUrl) {
-  const payload = { text: `*MeetScribe Summary*\n${digest}\n<${meetUrl}|View Meeting>` };
-  const maskedUrl = webhookUrl.replace(/(\/services\/[^/]+\/[^/]+\/).*$/, '$1***');
+async function postSlack(webhookUrl, digest) {
+  const payload = { text: digest };
+  const maskedUrl = webhookUrl.length > 10
+    ? webhookUrl.slice(0, -10) + '**********'
+    : '**********';
   console.log(`[MeetScribe] Slack POST → ${maskedUrl}`);
+  console.log(`[MeetScribe] Slack payload: ${JSON.stringify(payload).slice(0, 200)}`);
   try {
     const resp = await fetch(webhookUrl, {
       method: 'POST',
